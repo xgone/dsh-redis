@@ -1,0 +1,21 @@
+# dsh-redis bundle patch.
+# Passwords stay outside the repository in DSH_REDIS_PASSWORD_LOCAL/TEST.
+- insert:
+    - id: redis
+      name: 'dsh-redis'
+      config:
+        connections:
+          - name: local
+            url: 'redis://127.0.0.1:6379/0'
+            password: !!js >-
+              process.env.DSH_REDIS_PASSWORD_LOCAL || ''
+          - name: test
+            url: 'redis://redis.example.com:6379/10'
+            password: !!js >-
+              process.env.DSH_REDIS_PASSWORD_TEST || ''
+        defaultConnection: local
+        maxScanKeys: 1000
+        maxCollectionItems: 1000
+        maxStringLength: 1000000
+        operationTimeoutMs: 30000
+        writeApproval: true
