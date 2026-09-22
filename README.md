@@ -58,6 +58,8 @@ $env:DSH_REDIS_PASSWORD_TEST = "<test-password>"
 
 密码优先从连接配置读取；推荐使用环境变量 `DSH_REDIS_PASSWORD_<连接名大写>`，避免把密码写入 patch。Redis URL 中的密码也支持 URL 编码。
 
+账号密码形式的完整配置模板见 [`cordis.patch.username-password.example.yml`](cordis.patch.username-password.example.yml)。复制模板到本地 patch 后，只替换 `username` 和 `password` 占位符；不要把真实凭据提交到 Git。
+
 ## Agent 调用示例
 
 ```text

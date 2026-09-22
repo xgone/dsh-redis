@@ -15,6 +15,7 @@
     "resp.js",
     "tools.js",
     "cordis.patch.yml",
+    "cordis.patch.username-password.example.yml",
     "README.md"
   ],
   "dsh": {
