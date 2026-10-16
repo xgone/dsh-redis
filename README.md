@@ -28,10 +28,12 @@
 # 由 Harness plugin_manager 安装当前目录的 bundle
 ```
 
-本目录的 `cordis.patch.yml` 已配置本机和测试连接。密码只从环境变量读取，不写入 patch：
+本目录的 `cordis.patch.yml` 使用环境变量配置 Redis 地址和密码，不在仓库中保存测试端点：
 
 ```powershell
-# 在启动 DSH 的同一终端中设置，替换为实际密码
+# 在启动 DSH 的同一终端中设置，替换为实际地址和凭据
+$env:DSH_REDIS_URL_TEST = "redis://your-test-host:6379/10"
+$env:DSH_REDIS_URL_TEST_GREET = "redis://your-test-host:6379/20"
 $env:DSH_REDIS_PASSWORD_LOCAL = "<local-password>"
 $env:DSH_REDIS_PASSWORD_TEST = "<test-password>"
 ```
