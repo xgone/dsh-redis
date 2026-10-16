@@ -333,6 +333,253 @@ function buildRedisDeleteTool(cfg) {
   };
 }
 
+function buildRedisHSetTool(cfg) {
+  return {
+    name: 'redis_hset',
+    description: '向 Redis hash 新增或更新一个或多个 field；非字符串值会按 JSON 序列化。',
+    parameters: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Redis hash key。' },
+        fields: { type: 'object', description: 'field 到 value 的映射；字符串按原文写入，其他值按 JSON 序列化。', additionalProperties: true },
+        connection: { type: 'string', description: '连接名，可选，缺省使用默认连接。' },
+      },
+      required: ['key', 'fields'],
+      additionalProperties: false,
+    },
+    output: output({ properties: { key: { type: 'string' }, updated: { type: 'integer' }, fields: { type: 'array', items: { type: 'string' } } } }),
+    async execute(rawArgs, exec) {
+      const args = asRecord(rawArgs);
+      const key = requiredText(args, 'key', 'Redis key');
+      const fields = asRecord(args.fields);
+      const entries = Object.entries(fields);
+      if (entries.length === 0) throw new Error('fields must contain at least one hash field.');
+      const commandArgs = ['HSET', key];
+      for (const [field, value] of entries) {
+        if (field.length === 0) throw new Error('Hash field names must be non-empty strings.');
+        commandArgs.push(field, encodeValue(value, true));
+      }
+      const connection = selectConnection(cfg, optionalText(args, 'connection'));
+      const updated = Number(await command(cfg, connection, commandArgs, executionSignal(exec)));
+      return { connection: connection.name, key, fields: entries.map(([field]) => field), updated };
+    },
+    timeoutMs: toolTimeout(cfg),
+    isConcurrencySafe: () => false,
+  };
+}
+
+function buildRedisHDelTool(cfg) {
+  return {
+    name: 'redis_hdel',
+    description: '从 Redis hash 删除一个或多个 field，返回实际删除数量。',
+    parameters: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Redis hash key。' },
+        fields: { type: 'array', items: { type: 'string' }, description: '要删除的 field 列表。' },
+        connection: { type: 'string', description: '连接名，可选，缺省使用默认连接。' },
+      },
+      required: ['key', 'fields'],
+      additionalProperties: false,
+    },
+    output: output({ properties: { key: { type: 'string' }, deleted: { type: 'integer' }, fields: { type: 'array', items: { type: 'string' } } } }),
+    async execute(rawArgs, exec) {
+      const args = asRecord(rawArgs);
+      const key = requiredText(args, 'key', 'Redis key');
+      if (!Array.isArray(args.fields) || args.fields.length === 0) throw new Error('fields must be a non-empty array.');
+      const fields = args.fields.map((field) => {
+        if (typeof field !== 'string' || field.length === 0) throw new Error('Every hash field must be a non-empty string.');
+        return field;
+      });
+      const connection = selectConnection(cfg, optionalText(args, 'connection'));
+      const deleted = Number(await command(cfg, connection, ['HDEL', key, ...fields], executionSignal(exec)));
+      return { connection: connection.name, key, fields, deleted };
+    },
+    timeoutMs: toolTimeout(cfg),
+    isConcurrencySafe: () => false,
+  };
+}
+
+function buildRedisZAddTool(cfg) {
+  return {
+    name: 'redis_zadd',
+    description: '向 Redis sorted set 新增或更新 member 和 score，支持 always/nx/xx 条件写入。',
+    parameters: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Redis sorted-set key。' },
+        members: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              member: { type: 'string', description: '有序集合成员。' },
+              score: { type: 'number', description: '有限数值 score。' },
+            },
+            required: ['member', 'score'],
+            additionalProperties: false,
+          },
+          description: '要写入的 member/score 列表。',
+        },
+        connection: { type: 'string', description: '连接名，可选，缺省使用默认连接。' },
+        onlyIf: { type: 'string', enum: ['always', 'nx', 'xx'], description: 'always 无条件写入；nx 仅新增成员；xx 仅更新已存在成员。', default: 'always' },
+      },
+      required: ['key', 'members'],
+      additionalProperties: false,
+    },
+    output: output({ properties: { key: { type: 'string' }, changed: { type: 'integer' }, members: { type: 'integer' }, onlyIf: { type: 'string' } } }),
+    async execute(rawArgs, exec) {
+      const args = asRecord(rawArgs);
+      const key = requiredText(args, 'key', 'Redis key');
+      if (!Array.isArray(args.members) || args.members.length === 0) throw new Error('members must be a non-empty array.');
+      const members = args.members.map((item) => {
+        const entry = asRecord(item);
+        const member = requiredText(entry, 'member', 'Sorted-set member');
+        if (typeof entry.score !== 'number' || !Number.isFinite(entry.score)) throw new Error('Every sorted-set score must be a finite number.');
+        return { member, score: String(entry.score) };
+      });
+      const onlyIf = args.onlyIf === undefined ? 'always' : args.onlyIf;
+      if (!['always', 'nx', 'xx'].includes(onlyIf)) throw new Error('onlyIf must be always, nx, or xx.');
+      const commandArgs = ['ZADD', key];
+      if (onlyIf !== 'always') commandArgs.push(onlyIf.toUpperCase());
+      for (const item of members) commandArgs.push(item.score, item.member);
+      const connection = selectConnection(cfg, optionalText(args, 'connection'));
+      const changed = Number(await command(cfg, connection, commandArgs, executionSignal(exec)));
+      return { connection: connection.name, key, members: members.length, changed, onlyIf };
+    },
+    timeoutMs: toolTimeout(cfg),
+    isConcurrencySafe: () => false,
+  };
+}
+
+function buildRedisZRemTool(cfg) {
+  return {
+    name: 'redis_zrem',
+    description: '从 Redis sorted set 删除一个或多个 member，返回实际删除数量。',
+    parameters: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Redis sorted-set key。' },
+        members: { type: 'array', items: { type: 'string' }, description: '要删除的成员列表。' },
+        connection: { type: 'string', description: '连接名，可选，缺省使用默认连接。' },
+      },
+      required: ['key', 'members'],
+      additionalProperties: false,
+    },
+    output: output({ properties: { key: { type: 'string' }, deleted: { type: 'integer' }, members: { type: 'array', items: { type: 'string' } } } }),
+    async execute(rawArgs, exec) {
+      const args = asRecord(rawArgs);
+      const key = requiredText(args, 'key', 'Redis key');
+      if (!Array.isArray(args.members) || args.members.length === 0) throw new Error('members must be a non-empty array.');
+      const members = args.members.map((member) => {
+        if (typeof member !== 'string' || member.length === 0) throw new Error('Every sorted-set member must be a non-empty string.');
+        return member;
+      });
+      const connection = selectConnection(cfg, optionalText(args, 'connection'));
+      const deleted = Number(await command(cfg, connection, ['ZREM', key, ...members], executionSignal(exec)));
+      return { connection: connection.name, key, members, deleted };
+    },
+    timeoutMs: toolTimeout(cfg),
+    isConcurrencySafe: () => false,
+  };
+}
+
+function buildRedisSetMemberTool(cfg, redisCommand, toolName, action) {
+  return {
+    name: toolName,
+    description: action + ' Redis set 中的一个或多个 member，返回实际新增或删除数量。',
+    parameters: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Redis set key。' },
+        members: { type: 'array', items: { type: 'string' }, description: '要操作的成员列表。' },
+        connection: { type: 'string', description: '连接名，可选，缺省使用默认连接。' },
+      },
+      required: ['key', 'members'],
+      additionalProperties: false,
+    },
+    output: output({ properties: { key: { type: 'string' }, affected: { type: 'integer' }, members: { type: 'array', items: { type: 'string' } } } }),
+    async execute(rawArgs, exec) {
+      const args = asRecord(rawArgs);
+      const key = requiredText(args, 'key', 'Redis key');
+      if (!Array.isArray(args.members) || args.members.length === 0) throw new Error('members must be a non-empty array.');
+      const members = args.members.map((member) => {
+        if (typeof member !== 'string' || member.length === 0) throw new Error('Every set member must be a non-empty string.');
+        return member;
+      });
+      const connection = selectConnection(cfg, optionalText(args, 'connection'));
+      const affected = Number(await command(cfg, connection, [redisCommand, key, ...members], executionSignal(exec)));
+      return { connection: connection.name, key, members, affected };
+    },
+    timeoutMs: toolTimeout(cfg),
+    isConcurrencySafe: () => false,
+  };
+}
+
+function buildRedisListPushTool(cfg) {
+  return {
+    name: 'redis_list_push',
+    description: '向 Redis list 左侧或右侧追加一个或多个值；非字符串值按 JSON 序列化。',
+    parameters: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Redis list key。' },
+        values: { type: 'array', items: {}, description: '要追加的字符串或 JSON 值。' },
+        side: { type: 'string', enum: ['left', 'right'], description: 'left 对应 LPUSH，right 对应 RPUSH。', default: 'right' },
+        connection: { type: 'string', description: '连接名，可选，缺省使用默认连接。' },
+      },
+      required: ['key', 'values'],
+      additionalProperties: false,
+    },
+    output: output({ properties: { key: { type: 'string' }, length: { type: 'integer' }, pushed: { type: 'integer' }, side: { type: 'string' } } }),
+    async execute(rawArgs, exec) {
+      const args = asRecord(rawArgs);
+      const key = requiredText(args, 'key', 'Redis key');
+      if (!Array.isArray(args.values) || args.values.length === 0) throw new Error('values must be a non-empty array.');
+      const side = args.side === undefined ? 'right' : args.side;
+      if (side !== 'left' && side !== 'right') throw new Error('side must be left or right.');
+      const values = args.values.map((value) => encodeValue(value, true));
+      const connection = selectConnection(cfg, optionalText(args, 'connection'));
+      const length = Number(await command(cfg, connection, [side === 'left' ? 'LPUSH' : 'RPUSH', key, ...values], executionSignal(exec)));
+      return { connection: connection.name, key, length, pushed: values.length, side };
+    },
+    timeoutMs: toolTimeout(cfg),
+    isConcurrencySafe: () => false,
+  };
+}
+
+function buildRedisLRemTool(cfg) {
+  return {
+    name: 'redis_lrem',
+    description: '从 Redis list 删除指定值；count=0 删除所有匹配项，正数从头部开始，负数从尾部开始计数。',
+    parameters: {
+      type: 'object',
+      properties: {
+        key: { type: 'string', description: 'Redis list key。' },
+        value: { description: '要匹配删除的字符串或 JSON 值。' },
+        count: { type: 'integer', description: '删除数量规则，默认 0 表示删除所有匹配项。', default: 0 },
+        connection: { type: 'string', description: '连接名，可选，缺省使用默认连接。' },
+      },
+      required: ['key', 'value'],
+      additionalProperties: false,
+    },
+    output: output({ properties: { key: { type: 'string' }, removed: { type: 'integer' }, count: { type: 'integer' } } }),
+    async execute(rawArgs, exec) {
+      const args = asRecord(rawArgs);
+      const key = requiredText(args, 'key', 'Redis key');
+      if (!Object.prototype.hasOwnProperty.call(args, 'value')) throw new Error('value is required.');
+      const count = args.count === undefined ? 0 : args.count;
+      if (typeof count !== 'number' || !Number.isInteger(count)) throw new Error('count must be an integer.');
+      const value = encodeValue(args.value, true);
+      const connection = selectConnection(cfg, optionalText(args, 'connection'));
+      const removed = Number(await command(cfg, connection, ['LREM', key, String(count), value], executionSignal(exec)));
+      return { connection: connection.name, key, removed, count };
+    },
+    timeoutMs: toolTimeout(cfg),
+    isConcurrencySafe: () => false,
+  };
+}
+
 function buildRedisScanTool(cfg) {
   return {
     name: 'redis_scan',
@@ -395,6 +642,14 @@ export function buildRedisTools(cfg) {
       buildRedisGetTool(cfg),
       buildRedisSetTool(cfg),
       buildRedisDeleteTool(cfg),
+      buildRedisHSetTool(cfg),
+      buildRedisHDelTool(cfg),
+      buildRedisZAddTool(cfg),
+      buildRedisZRemTool(cfg),
+      buildRedisSetMemberTool(cfg, 'SADD', 'redis_sadd', '新增'),
+      buildRedisSetMemberTool(cfg, 'SREM', 'redis_srem', '删除'),
+      buildRedisListPushTool(cfg),
+      buildRedisLRemTool(cfg),
       buildRedisScanTool(cfg),
     ],
   };

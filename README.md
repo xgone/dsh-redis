@@ -9,8 +9,12 @@
 - `redis_list`：列出连接并执行 `PING`。
 - `redis_health`：检查连接状态与插件限制。
 - `redis_get`：读取 key，支持 string、hash、list、set、zset，并返回 TTL。
-- `redis_set`：创建或更新 key，支持 JSON 值、过期时间、`nx`/`xx` 条件写入。
+- `redis_set`：创建或更新 string key，支持 JSON 值、过期时间、`nx`/`xx` 条件写入。
 - `redis_delete`：删除一个或多个 key。
+- `redis_hset` / `redis_hdel`：新增/更新 hash field，或删除 hash field。
+- `redis_zadd` / `redis_zrem`：新增/更新 sorted-set member 的 score，或删除 member。
+- `redis_sadd` / `redis_srem`：新增或删除 set member。
+- `redis_list_push` / `redis_lrem`：向 list 左/右追加值，或按值删除匹配项。
 - `redis_scan`：按模式扫描 key，可选择读取 string 值。
 
 插件使用 Node 内置 `net`/`tls` 和 RESP2 协议客户端，不依赖第三方 Redis SDK，也不把 Redis 凭据发送到浏览器。
@@ -67,10 +71,15 @@ redis_health {}
 redis_set {"key":"profile:42","value":{"name":"Ada"},"ttlSeconds":3600}
 redis_get {"key":"profile:42","parseJson":true}
 redis_scan {"pattern":"profile:*","includeValues":true}
+redis_hset {"key":"user:42","fields":{"name":"Ada","active":true}}
+redis_hdel {"key":"user:42","fields":["active"]}
+redis_zadd {"key":"leaderboard","members":[{"member":"user:42","score":125}]}
+redis_sadd {"key":"online-users","members":["user:42"]}
+redis_list_push {"key":"jobs","side":"right","values":[{"id":1}]}
 redis_delete {"keys":["profile:42"]}
 ```
 
-`redis_set` 和 `redis_delete` 默认经过 Harness 的写操作审批门。若确需关闭，可在插件配置中设置 `writeApproval: false`；生产环境建议保持开启。
+所有 Redis 写工具（`redis_set`、`redis_delete`、`redis_hset`、`redis_hdel`、`redis_zadd`、`redis_zrem`、`redis_sadd`、`redis_srem`、`redis_list_push`、`redis_lrem`）执行前都会弹出逐次确认，显示目标 key 与字段/member 摘要，并由用户选择“允许本次操作”或“拒绝”。取消、无可用确认界面或非主会话调用都会 fail closed。可在插件配置中设置 `writeApproval: false` 关闭，但生产环境建议保持开启。
 
 ## 限制
 
