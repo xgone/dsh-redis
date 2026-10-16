@@ -57,10 +57,12 @@ function describeWrite(exec) {
   };
 }
 
-export async function requestRedisWriteApproval(userQuestions, exec) {
+export async function requestRedisWriteApproval(userQuestions, exec, approvedSessions) {
   if (!exec.agent) {
     return { kind: 'deny', reason: 'Redis 写操作需要当前会话中的用户确认。' };
   }
+  if (approvedSessions.has(exec.agent)) return { kind: 'allow' };
+
   const { question, detail } = describeWrite(exec);
   try {
     const answer = await userQuestions.ask({
@@ -73,13 +75,17 @@ export async function requestRedisWriteApproval(userQuestions, exec) {
         detail,
         options: [
           { label: '允许本次操作', description: '仅执行这次 Redis 写入或删除。' },
-          { label: '拒绝', description: '取消这次 Redis 写操作。' },
+          { label: '允许本次会话', description: '本次会话后续 Redis 写操作不再询问；DSH 重启或会话恢复后失效。' },
+          { label: '拒绝本次操作', description: '取消这次 Redis 写操作。' },
         ],
       }],
     });
     const decision = answer.answers.find((item) => item.id === REDIS_WRITE_QUESTION_ID);
-    if (decision?.selected.includes('允许本次操作')) return { kind: 'allow' };
-    return { kind: 'deny', reason: '用户拒绝或未确认 Redis 写操作。' };
+    if (decision?.selected.includes('允许本次会话')) approvedSessions.add(exec.agent);
+    if (decision?.selected.includes('允许本次操作') || decision?.selected.includes('允许本次会话')) {
+      return { kind: 'allow' };
+    }
+    return { kind: 'deny', reason: '用户拒绝本次 Redis 写操作。' };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     return { kind: 'deny', reason: '无法取得 Redis 写操作确认：' + reason };
@@ -90,11 +96,12 @@ export function apply(ctx, config) {
   const cfg = resolveConfig(config);
   const { tools } = buildRedisTools(cfg);
   const disposers = tools.map((definition) => ctx.tools.register(definition));
+  const approvedSessions = new WeakSet();
 
   if (cfg.writeApproval) {
     ctx.on('tools/pre-execute', async (exec, next) => {
       if (!REDIS_WRITE_TOOLS.has(exec.name)) return next();
-      return requestRedisWriteApproval(ctx.userQuestions, exec);
+      return requestRedisWriteApproval(ctx.userQuestions, exec, approvedSessions);
     });
   }
 

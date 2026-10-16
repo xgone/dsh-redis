@@ -81,7 +81,7 @@ redis_list_push {"key":"jobs","side":"right","values":[{"id":1}]}
 redis_delete {"keys":["profile:42"]}
 ```
 
-所有 Redis 写工具（`redis_set`、`redis_delete`、`redis_hset`、`redis_hdel`、`redis_zadd`、`redis_zrem`、`redis_sadd`、`redis_srem`、`redis_list_push`、`redis_lrem`）执行前都会弹出逐次确认，显示目标 key 与字段/member 摘要，并由用户选择“允许本次操作”或“拒绝”。取消、无可用确认界面或非主会话调用都会 fail closed。可在插件配置中设置 `writeApproval: false` 关闭，但生产环境建议保持开启。
+所有 Redis 写工具（`redis_set`、`redis_delete`、`redis_hset`、`redis_hdel`、`redis_zadd`、`redis_zrem`、`redis_sadd`、`redis_srem`、`redis_list_push`、`redis_lrem`）执行前都会弹出逐次确认，显示目标 key 与字段/member 摘要。用户可选择“允许本次操作”“允许本次会话”或“拒绝本次操作”。会话授权仅保存在当前 Agent 运行实例的内存中，仅覆盖后续 Redis 写工具调用；DSH 重启或会话重新恢复后需重新授权。取消、无可用确认界面或非主会话调用都会 fail closed。可在插件配置中设置 `writeApproval: false` 关闭确认，但生产环境建议保持开启。
 
 ## 限制
 
