@@ -28,17 +28,16 @@
 # 由 Harness plugin_manager 安装当前目录的 bundle
 ```
 
-本目录的 `cordis.patch.yml` 使用环境变量配置 Redis 地址和密码，不在仓库中保存测试端点：
+仓库只提供安全默认配置 [`cordis.patch.example.yml`](cordis.patch.example.yml)。私有连接配置应写在 DSH profile 的 `cordis.patch.yml` 覆盖层，不要提交到 Git。可按需设置地址与密码环境变量，或在 profile 覆盖层中填写私有连接信息：
 
 ```powershell
-# 在启动 DSH 的同一终端中设置，替换为实际地址和凭据
 $env:DSH_REDIS_URL_TEST = "redis://your-test-host:6379/10"
 $env:DSH_REDIS_URL_TEST_GREET = "redis://your-test-host:6379/20"
 $env:DSH_REDIS_PASSWORD_LOCAL = "<local-password>"
 $env:DSH_REDIS_PASSWORD_TEST = "<test-password>"
 ```
 
-修改环境变量后需要重新启动 DSH。若要改用其他 Redis 地址，可设置 `DSH_REDIS_URL`，或在 patch 中增加连接。
+该项目目录的本地 `cordis.patch.yml` 已加入 `.gitignore`，只用于本机开发，不会进入提交或发布包。修改环境变量后需要重新启动 DSH。
 
 也可以在 patch 中配置多个连接：
 
@@ -64,7 +63,7 @@ $env:DSH_REDIS_PASSWORD_TEST = "<test-password>"
 
 密码优先从连接配置读取；推荐使用环境变量 `DSH_REDIS_PASSWORD_<连接名大写>`，避免把密码写入 patch。Redis URL 中的密码也支持 URL 编码。
 
-账号密码形式的完整配置模板见 [`cordis.patch.username-password.example.yml`](cordis.patch.username-password.example.yml)。复制模板到本地 patch 后，只替换 `username` 和 `password` 占位符；不要把真实凭据提交到 Git。
+账号密码形式的配置模板见 [`cordis.patch.username-password.example.yml`](cordis.patch.username-password.example.yml)。将其中连接项合并到 DSH profile 的 `cordis.patch.yml` 覆盖层，替换用户名和密码占位符；不要将真实凭据写入 Git 跟踪文件。
 
 ## Agent 调用示例
 
